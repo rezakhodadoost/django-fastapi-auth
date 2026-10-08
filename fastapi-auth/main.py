@@ -1,9 +1,18 @@
 import fastapi
 import pydantic
 
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+from database import get_db
+from models import User
+
+from pwdlib import PasswordHash
+
+
 app = fastapi.FastAPI()
 
-users = {}
+password_hash = PasswordHash.recommended()
 
 
 class RegisterRequest(pydantic.BaseModel):
@@ -12,19 +21,37 @@ class RegisterRequest(pydantic.BaseModel):
 
 
 @app.post("/register/")
-def register(data: RegisterRequest):
+def register(
+    data: RegisterRequest,
+    db: Session = Depends(get_db)
+):
 
-    if data.username in users:
-        return fastapi.HTTPException(
+    existing_user = (
+        db.query(User)
+        .filter(User.username == data.username)
+        .first()
+    )
+
+    if existing_user:
+        raise fastapi.HTTPException(
             status_code=400,
             detail="username already exists"
         )
 
-    users[data.username] = data.password
+    hashed_password = password_hash.hash(data.password)
+
+    new_user = User(
+        username=data.username,
+        password=hashed_password
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
     return {
         "message": "user created successfully",
-        "username": data.username
+        "username": new_user.username
     }
 
 
@@ -34,15 +61,24 @@ class LoginRequest(pydantic.BaseModel):
 
 
 @app.post("/login/")
-def login(data: LoginRequest):
+def login(
+    data: LoginRequest,
+    db: Session = Depends(get_db)
+):
 
-    if data.username not in users:
+    user = (
+        db.query(User)
+        .filter(User.username == data.username)
+        .first()
+    )
+
+    if not user:
         raise fastapi.HTTPException(
             status_code=401,
             detail="invalid username or password"
         )
 
-    if users[data.username] != data.password:
+    if not password_hash.verify(data.password, user.password):
         raise fastapi.HTTPException(
             status_code=401,
             detail="invalid username or password"
@@ -50,5 +86,5 @@ def login(data: LoginRequest):
 
     return {
         "message": "Login successful",
-        "username": data.username
+        "username": user.username
     }
