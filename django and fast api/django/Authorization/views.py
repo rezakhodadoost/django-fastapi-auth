@@ -6,7 +6,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import json
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User 
+from .models import LoginLog
 # Create your views here.
 @method_decorator(csrf_exempt , name="dispatch")
 class registerview(View):
@@ -40,7 +41,13 @@ class LoginView(View):
 
     def post(self, request):
 
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse(
+                {"detail": "Invalid JSON"},
+                status=400
+            )
 
         username = data.get("username")
         password = data.get("password")
@@ -51,13 +58,33 @@ class LoginView(View):
             password=password
         )
 
+        ip_address = request.META.get("REMOTE_ADDR")
+        user_agent = request.META.get("HTTP_USER_AGENT")
+
         if user is None:
+
+            LoginLog.objects.create(
+                username=username or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=False,
+                failure_reason="invalid_credentials"
+            )
+
             return JsonResponse(
                 {"detail": "Invalid username or password"},
                 status=401
             )
 
         login(request, user)
+
+        LoginLog.objects.create(
+            user=user,
+            username=user.username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True
+        )
 
         return JsonResponse({
             "message": "Login successful",
