@@ -37,3 +37,16 @@ class LoginLog(models.Model):
 
     def __str__(self):
         return f"{self.username} - {self.login_time}"
+
+
+class UserTwoFactor(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="two_factor"
+    )
+
+    is_enabled = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.user.username} - 2FA"
